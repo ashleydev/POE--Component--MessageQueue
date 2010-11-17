@@ -1,0 +1,19 @@
+# Emacs work files
+*~
+\#*
+.\#*
+
+# ignore any vim files:
+*.sw[a-z]
+.netrwhist
+Session.vim
+
+# Ignore log directory
+log/*
+logs
+
+# Ingore tmp directory
+tmp/*
+
+# Ignore test temporaries
+t/tmp

@@ -23,7 +23,7 @@ with 'POE::Component::MessageQueue::Storage' => { excludes => 'log' };
 
 sub log
 {
-	my $self = shift;;
+	my $self = shift;
 	$self->log_function->(@_) if $self->has_log_function;
 	return;
 }

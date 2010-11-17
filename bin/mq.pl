@@ -6,6 +6,7 @@ use POE::Component::MessageQueue::Storage::Default;
 use POE::Component::MessageQueue::Storage::Memory;
 use POE::Component::MessageQueue::Storage::BigMemory;
 use POE::Component::MessageQueue::Storage::DBI;
+use POE::Component::MessageQueue::Storage::MongoDB;
 use POE::Component::MessageQueue::Storage::Throttled;
 use Getopt::Long;
 use Devel::StackTrace;
@@ -36,6 +37,7 @@ my $front_store = 'memory';
 my $front_max;
 my $storage = 'default';
 my $crash_cmd = undef;
+my $mongo_dsn = 'mongodb://localhost:27017';
 my $dbi_dsn = undef;
 my $dbi_username = undef;
 my $dbi_password = undef;
@@ -55,6 +57,7 @@ GetOptions(
 	"log-conf=s"       => \$CONF_LOG,
 	"stats!"           => \$statistics,
 	"uuids!"           => \$uuids,
+	"mongo-dsn=s"      => \$mongo_dsn,
 	"dbi-dsn=s"        => \$dbi_dsn,
 	"dbi-username=s"   => \$dbi_username,
 	"dbi-password=s"   => \$dbi_password,
@@ -108,6 +111,7 @@ $X [--storage <str>]
 $X [--front-store <str>]           [--front-max <size>] 
 $X [--granularity <seconds>]       [--nouuids]
 $X [--timeout|-i <seconds>]        [--throttle|-T <count>]
+$X [--mongo-dsn <str>]
 $X [--dbi-dsn <str>]               [--mq-id <str>]
 $X [--dbi-username <str>]          [--dbi-password <str>]
 $X [--pump-freq|-Q <seconds>]
@@ -125,7 +129,7 @@ SERVER OPTIONS:
 STORAGE OPTIONS:
   --storage <str>         Specify which overall storage engine to use.  This
                           affects what other options are value.  (can be
-                          default or dbi)
+                          default, dbi, or mongo)
   --front-store -f <str>  Specify which in-memory storage engine to use for
                           the front-store (can be memory or bigmemory).
   --front-max <size>      How much message body the front-store should cache.
@@ -146,12 +150,13 @@ STORAGE OPTIONS:
                           (Default: /var/lib/perl_mq)
   --log-conf <path>       The path to the log configuration file 
                           (Default: /etc/perl_mq/log.conf)
-
+  --mongo-dsn <str>       The database connection when using --storage mongo
+                          (syntax: mongodb://[username:password@]host1[:port1][,host2[:port2],...[,hostN[:portN]]][/database])
   --dbi-dsn <str>         The database DSN when using --storage dbi
   --dbi-username <str>    The database username when using --storage dbi
   --dbi-password <str>    The database password when using --storage dbi
   --mq-id <str>           A string uniquely identifying this MQ when more
-                          than one MQ use the DBI database for storage
+                          than one MQ use the database for storage
 
 STATISTICS OPTIONS:
   --stats                 If specified the, statistics information will be 
@@ -204,7 +209,7 @@ if ( not -d $DATA_DIR )
 if ( $background )
 {   
 	# the simplest daemonize, ever.
-	defined(fork() && exit 0) or "Can't fork: $!";
+	defined(fork() && exit 0) or die "Can't fork: $!";
 	setsid or die "Can't start a new session: $!";
 	open STDIN,  '/dev/null' or die "Can't redirect STDIN from /dev/null: $!";
 	open STDOUT, '>/dev/null' or die "Can't redirect STDOUT to /dev/null: $!";
@@ -269,18 +274,25 @@ else {
 			password => $dbi_password,
 			mq_id    => $mq_id,
 		);
+        if ($throttle_max > 0) {
+            $storage = POE::Component::MessageQueue::Storage::Throttled->new(
+                back         => $storage,
+                throttle_max => $throttle_max
+            );
+        }
 	}
-	else
+    elsif ($storage eq 'mongo')
+    {
+		$storage = POE::Component::MessageQueue::Storage::MongoDB->new(
+            dsn      => $mongo_dsn,
+            mq_id    => $mq_id,
+        );
+    }
+    else
 	{
 		die "Unknown storage specified: $storage";
 	}
 
-	if ($throttle_max > 0) {
-		$storage = POE::Component::MessageQueue::Storage::Throttled->new(
-			back         => $storage,
-			throttle_max => $throttle_max
-		);
-	}
 }
 
 my $idgen;
